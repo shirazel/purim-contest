@@ -26,6 +26,8 @@
             background-image: radial-gradient(#facc15 0.5px, transparent 0.5px), radial-gradient(#facc15 0.5px, #fff7ed 0.5px);
             background-size: 20px 20px;
             direction: rtl;
+            margin: 0;
+            padding: 0;
         }
         .circus-header {
             background: #e11d48;
@@ -41,7 +43,7 @@
             cursor: pointer;
         }
         .btn-primary:active { transform: translateY(2px); box-shadow: 0 2px 0 #000 !important; }
-        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #be123c; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #be123c; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .animate-pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
@@ -53,234 +55,53 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // --- Icons ---
+        // --- Icon Components ---
         const LockIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>;
         const UnlockIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>;
         const PartyIcon = () => <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10"></path><path d="m14 2 5 5"></path><path d="m2 22 10-10"></path><path d="m8 11 5 5"></path></svg>;
         const CrownIcon = () => <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"></path></svg>;
+        const ImageIcon = () => <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>;
         const SaveIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>;
-        const ImageIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>;
 
-        // --- Firebase Config ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: "" };
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'purim-contest-live';
-        
-        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.firestore();
-
-        const STAGES = { UPLOAD: 'upload', VOTING: 'voting', RESULTS: 'results' };
-
-        const compressImage = (base64Str) => {
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.src = base64Str;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 500;
-                    const scaleSize = MAX_WIDTH / img.width;
-                    canvas.width = MAX_WIDTH;
-                    canvas.height = img.height * scaleSize;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.6));
-                };
-            });
-        };
-
-        const App = () => {
-            const [user, setUser] = useState(null);
-            const [authReady, setAuthReady] = useState(false);
-            const [roomId, setRoomId] = useState('שיעור-פורים');
-            const [stage, setStage] = useState(STAGES.UPLOAD);
-            const [contestTitle, setContestTitle] = useState('קרנבל התחפושות');
-            const [allParticipants, setAllParticipants] = useState([]);
-            const [allVotes, setAllVotes] = useState([]);
-            const [isAdmin, setIsAdmin] = useState(false);
-            const [editDisplayTitle, setEditDisplayTitle] = useState('');
-            const [msg, setMsg] = useState(null);
-
-            const showMsg = (text) => { setMsg(text); setTimeout(() => setMsg(null), 3000); };
-
-            // RULE 3: Auth first, await then track state
-            useEffect(() => {
-                const initAuth = async () => {
-                    try {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await auth.signInWithCustomToken(__initial_auth_token);
-                        } else {
-                            await auth.signInAnonymously();
-                        }
-                    } catch (e) {
-                        console.error("Auth process error:", e);
-                    }
-                };
-                initAuth();
-                const unsubscribe = auth.onAuthStateChanged(u => {
-                    if (u) {
-                        setUser(u);
-                        setAuthReady(true);
-                    }
-                });
-                const r = new URLSearchParams(window.location.search).get('room');
-                if (r) setRoomId(r);
-                return () => unsubscribe();
-            }, []);
-
-            // RULE 3: Guard Firestore with 'user' check
-            useEffect(() => {
-                if (!user || !authReady) return;
-                
-                // RULE 1: Strict paths /artifacts/{appId}/public/data/{collectionName}
-                const roomRef = db.doc(`artifacts/${appId}/public/data/rooms/${roomId}`);
-                const unsubRoom = roomRef.onSnapshot(doc => {
-                    if (doc.exists) {
-                        const data = doc.data();
-                        setStage(data.stage || STAGES.UPLOAD);
-                        setContestTitle(data.displayTitle || "קרנבל התחפושות");
-                        setEditDisplayTitle(data.displayTitle || "קרנבל התחפושות");
-                    } else {
-                        // Create room if missing
-                        roomRef.set({ stage: STAGES.UPLOAD, displayTitle: "קרנבל התחפושות" })
-                               .catch(err => console.error("Initial room creation error:", err));
-                    }
-                }, err => {
-                    console.error("Room listener permission error:", err);
-                });
-
-                const unsubParts = db.collection(`artifacts/${appId}/public/data/participants`).onSnapshot(snap => {
-                    setAllParticipants(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                }, err => {
-                    console.error("Participants listener permission error:", err);
-                });
-
-                const unsubVotes = db.collection(`artifacts/${appId}/public/data/votes`).onSnapshot(snap => {
-                    setAllVotes(snap.docs.map(d => d.data()));
-                }, err => {
-                    console.error("Votes listener permission error:", err);
-                });
-
-                if (sessionStorage.getItem(`admin_${roomId}`) === 'true') setIsAdmin(true);
-
-                return () => { unsubRoom(); unsubParts(); unsubVotes(); };
-            }, [authReady, user, roomId]);
-
-            // RULE 2: Client side filtering
-            const roomParticipants = useMemo(() => allParticipants.filter(p => p.roomId === roomId), [allParticipants, roomId]);
-            const roomVotes = useMemo(() => allVotes.filter(v => v.roomId === roomId), [allVotes, roomId]);
-
-            const results = useMemo(() => {
-                const scores = {};
-                roomParticipants.forEach(p => scores[p.id] = { ...p, score: 0 });
-                roomVotes.forEach(v => {
-                    if (v.targetId && scores[v.targetId]) scores[v.targetId].score += (v.points || 0);
-                });
-                return Object.values(scores).sort((a, b) => b.score - a.score);
-            }, [roomParticipants, roomVotes]);
-
-            if (!authReady || !user) return (
-                <div className="min-h-screen flex flex-col items-center justify-center font-bold text-rose-600 gap-4">
-                    <div className="loader"></div>
-                    <p className="text-xl">מתחבר למסד הנתונים... 🎪</p>
-                </div>
-            );
-
-            return (
-                <div className="min-h-screen pb-40">
-                    {msg && <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-xl font-bold z-[1000] shadow-2xl animate-pop text-center">{msg}</div>}
-                    
-                    <header className="circus-header p-6 text-white shadow-xl flex justify-between items-center sticky top-0 z-50">
-                        <div className="flex items-center gap-4 text-right">
-                            <div className="bg-white p-2 rounded-full text-rose-600 shadow-lg"><PartyIcon /></div>
-                            <div>
-                                <h1 className="text-xl md:text-2xl font-bold">{contestTitle}</h1>
-                                <p className="text-yellow-300 text-xs font-bold">תחרות פעילה בזמן אמת ✨</p>
-                            </div>
-                        </div>
-                        <button onClick={() => {
-                            const p = prompt("קוד מנהל (2025):");
-                            if (p === "2025") { setIsAdmin(true); sessionStorage.setItem(`admin_${roomId}`, 'true'); }
-                        }} className="p-3 bg-white/20 rounded-xl border border-white/30 hover:bg-white/40 transition-all">
-                            {isAdmin ? <UnlockIcon /> : <LockIcon />}
-                        </button>
-                    </header>
-
-                    <div className="max-w-4xl mx-auto px-6 py-8">
-                        {isAdmin && (
-                            <div className="bg-white p-6 rounded-[2.5rem] mb-10 shadow-lg border-4 border-yellow-400 animate-pop">
-                                <h3 className="font-bold text-rose-600 mb-4 text-right">ניהול שלבי התחרות:</h3>
-                                <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-2 mb-6">
-                                    <button onClick={() => db.doc(`artifacts/${appId}/public/data/rooms/${roomId}`).update({stage: STAGES.UPLOAD})} className={`flex-1 py-3 rounded-xl font-bold ${stage === STAGES.UPLOAD ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500'}`}>1. העלאה</button>
-                                    <button onClick={() => db.doc(`artifacts/${appId}/public/data/rooms/${roomId}`).update({stage: STAGES.VOTING})} className={`flex-1 py-3 rounded-xl font-bold ${stage === STAGES.VOTING ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500'}`}>2. הצבעה</button>
-                                    <button onClick={() => db.doc(`artifacts/${appId}/public/data/rooms/${roomId}`).update({stage: STAGES.RESULTS})} className={`flex-1 py-3 rounded-xl font-bold ${stage === STAGES.RESULTS ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500'}`}>3. תוצאות</button>
-                                </div>
-                                <div className="text-right space-y-2">
-                                    <label className="font-bold text-slate-700 block text-sm">עריכת שם התחרות לתצוגה:</label>
-                                    <div className="flex gap-2">
-                                        <input value={editDisplayTitle} onChange={e => setEditDisplayTitle(e.target.value)} className="flex-1 p-3 border-2 rounded-xl outline-none focus:border-rose-600" />
-                                        <button onClick={() => db.doc(`artifacts/${appId}/public/data/rooms/${roomId}`).update({displayTitle: editDisplayTitle})} className="bg-rose-600 text-white px-4 rounded-xl font-bold"><SaveIcon /></button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        <main>
-                            {stage === STAGES.UPLOAD && (
-                                <UploadPhase 
-                                    onAdd={async (n, c, i) => { 
-                                        const comp = await compressImage(i); 
-                                        await db.collection(`artifacts/${appId}/public/data/participants`).add({ name: n, costume: c, imageUrl: comp, roomId, userId: user.uid, createdAt: new Date().toISOString() }); 
-                                        showMsg("התחפושת עלתה! 🎉"); 
-                                    }} 
-                                    participants={roomParticipants} 
-                                    myId={user.uid} 
-                                />
-                            )}
-                            {stage === STAGES.VOTING && (
-                                <VotingPhase 
-                                    participants={roomParticipants} 
-                                    onVote={async (tid, pts) => { 
-                                        await db.collection(`artifacts/${appId}/public/data/votes`).add({ voterId: user.uid, targetId: tid, points: pts, roomId, timestamp: new Date().toISOString() }); 
-                                        showMsg("הצבעתך נקלטה! ✅"); 
-                                    }} 
-                                />
-                            )}
-                            {stage === STAGES.RESULTS && <ResultsPhase results={results} />}
-                        </main>
-                    </div>
-                </div>
-            );
-        };
-
-        const UploadPhase = ({ onAdd, participants, myId }) => {
-            const [name, setName] = useState(""); const [costume, setCostume] = useState(""); const [img, setImg] = useState(""); const [loading, setLoading] = useState(false);
+        // --- UI Components ---
+        const UploadPhase = ({ onAdd, participants = [], myId }) => {
+            const [name, setName] = useState("");
+            const [costume, setCostume] = useState("");
+            const [img, setImg] = useState("");
+            const [loading, setLoading] = useState(false);
             const hasUploaded = participants.some(p => p.userId === myId);
+
+            const handleJoin = async () => {
+                if (!name || !img) return;
+                setLoading(true);
+                try { await onAdd(name, costume, img); } catch (e) { console.error(e); }
+                setLoading(false);
+            };
+
             return (
-                <div className="space-y-12">
+                <div className="space-y-12 animate-in fade-in">
                     {!hasUploaded ? (
-                        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border-4 border-white text-right animate-in slide-in-from-bottom-5">
+                        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border-4 border-white text-right">
                             <h2 className="text-2xl font-bold text-rose-600 mb-6">הצטרפו לתחרות! ✨</h2>
-                            <div className="space-y-4">
-                                <input value={name} onChange={e => setName(e.target.value)} placeholder="שם המשתתף" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-rose-600 font-bold" />
-                                <input value={costume} onChange={e => setCostume(e.target.value)} placeholder="מה התחפושת?" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-rose-600 font-bold" />
-                                <div className="border-4 border-dashed border-slate-200 rounded-2xl p-6 text-center cursor-pointer relative h-48 flex items-center justify-center overflow-hidden hover:bg-slate-50">
-                                    {img ? <img src={img} className="absolute inset-0 w-full h-full object-cover" /> : <div className="flex flex-col items-center"><ImageIcon /><span className="mt-2 font-bold text-slate-400">לחצו להעלאת תמונה</span></div>}
-                                    <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={e => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => setImg(r.result); r.readAsDataURL(f); } }} />
-                                </div>
-                                <button onClick={async () => { setLoading(true); await onAdd(name, costume, img); setLoading(false); }} disabled={!img || loading || !name} className="btn-primary w-full py-4 rounded-2xl font-bold text-xl flex items-center justify-center gap-2">
-                                    {loading ? <div className="loader" style={{width:'20px',height:'20px'}}></div> : "אני בפנים! 🔥"}
-                                </button>
+                            <input value={name} onChange={e => setName(e.target.value)} placeholder="שם המשתתף" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl mb-4 outline-none focus:border-rose-600 font-bold" />
+                            <input value={costume} onChange={e => setCostume(e.target.value)} placeholder="מה התחפושת?" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl mb-4 outline-none focus:border-rose-600 font-bold" />
+                            <div className="border-4 border-dashed border-slate-200 rounded-2xl p-6 mb-4 text-center cursor-pointer relative h-40 flex items-center justify-center overflow-hidden">
+                                {img ? <img src={img} className="absolute inset-0 w-full h-full object-cover" /> : <span>לחצו להעלאת תמונה 📸</span>}
+                                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={e => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => setImg(r.result); r.readAsDataURL(f); } }} />
                             </div>
+                            <button onClick={handleJoin} disabled={!img || loading || !name} className="btn-primary w-full py-4 rounded-2xl font-bold text-xl flex items-center justify-center gap-2">
+                                {loading ? <div className="loader" style={{width:'20px',height:'20px'}}></div> : "אני בפנים! 🔥"}
+                            </button>
                         </div>
                     ) : <div className="bg-rose-600 text-white p-10 rounded-[2.5rem] text-center font-bold text-2xl animate-pulse shadow-xl">התחפושת שלך נקלטה! ✨</div>}
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                        {participants.map(p => (<div key={p.id} className="bg-white rounded-2xl overflow-hidden shadow-lg border-2 border-white animate-pop text-right"><img src={p.imageUrl} className="aspect-[3/4] object-cover w-full" /><div className="p-3 text-center"><p className="font-bold text-slate-800 truncate">{p.name}</p><p className="text-rose-600 text-[10px] font-bold">{p.costume}</p></div></div>))}
+                        {participants.map(p => (<div key={p.id} className="bg-white rounded-2xl overflow-hidden shadow-lg border-2 border-white animate-pop"><img src={p.imageUrl} className="aspect-[3/4] object-cover w-full" /><div className="p-3 text-center"><p className="font-bold text-slate-800 truncate">{p.name}</p><p className="text-rose-600 text-[10px] font-bold">{p.costume}</p></div></div>))}
                     </div>
                 </div>
             );
         };
 
-        const VotingPhase = ({ participants, onVote }) => (
+        const VotingPhase = ({ participants = [], onVote }) => (
             <div className="space-y-8 text-center animate-in zoom-in">
                 <h2 className="text-3xl font-bold text-rose-600">מי התחפושת המנצחת? 🗳️</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8">
@@ -292,7 +113,7 @@
                                 <div className="flex flex-col gap-2">
                                     <button onClick={() => onVote(p.id, 3)} className="py-2 bg-yellow-400 text-rose-700 font-bold rounded-xl text-sm active:scale-95 transition-transform">🥇 3 נקודות</button>
                                     <button onClick={() => onVote(p.id, 2)} className="py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-sm active:scale-95 transition-transform">🥈 2 נקודות</button>
-                                    <button onClick={() => onVote(p.id, 1)} className="py-2 bg-orange-100 text-orange-700 font-bold rounded-xl text-sm active:scale-95 transition-transform">🥉 1 נקודה</button>
+                                    <button onClick={() => onVote(p.id, 1)} className="py-2 bg-orange-50 text-orange-700 font-bold rounded-xl text-sm active:scale-95 transition-transform">🥉 1 נקודה</button>
                                 </div>
                             </div>
                         </div>
@@ -301,16 +122,15 @@
             </div>
         );
 
-        const ResultsPhase = ({ results }) => (
+        const ResultsPhase = ({ results = [] }) => (
             <div className="text-center animate-in zoom-in duration-700 pb-20">
                 <h2 className="text-4xl font-bold text-rose-600 mb-12 flex flex-col gap-2 items-center"><span className="text-6xl">🏆</span> הזוכים הגדולים!</h2>
                 <div className="flex justify-center items-end gap-2 md:gap-8 mb-20 px-2 pt-10">
                     {results[1] && <div className="flex flex-col items-center"><img src={results[1].imageUrl} className="w-24 h-24 md:w-36 md:h-36 rounded-2xl border-4 border-slate-300 object-cover shadow-lg" /><div className="h-32 w-28 md:w-40 bg-slate-200 rounded-t-[2rem] mt-4 flex flex-col items-center pt-4 font-bold text-slate-600 shadow-inner">2</div></div>}
-                    {results[0] && <div className="flex flex-col items-center z-10 scale-110"><div className="animate-bounce text-yellow-400 mb-2"><CrownIcon /></div><img src={results[0].imageUrl} className="w-32 h-32 md:w-44 md:h-44 rounded-[2.5rem] border-8 border-yellow-400 object-cover shadow-2xl" /><div className="h-44 w-32 md:w-40 bg-rose-600 rounded-t-3xl mt-4 flex flex-col items-center pt-4 text-white font-bold shadow-xl text-center">1</div></div>}
-                    {results[2] && <div className="flex flex-col items-center"><img src={results[2].imageUrl} className="w-20 h-20 md:w-28 md:h-28 rounded-2xl border-4 border-orange-300 object-cover shadow-lg" /><div className="h-24 w-24 md:w-36 bg-orange-100 rounded-t-[2rem] mt-4 flex flex-col items-center pt-4 font-bold text-orange-700 shadow-inner">3</div></div>}
+                    {results[0] && <div className="flex flex-col items-center z-10 scale-110"><div className="animate-bounce text-yellow-400 mb-2"><CrownIcon /></div><img src={results[0].imageUrl} className="w-32 h-32 md:w-44 md:h-44 rounded-[2.5rem] border-8 border-yellow-400 object-cover shadow-2xl" /><div className="h-44 w-32 md:w-40 bg-rose-600 rounded-t-3xl mt-4 flex flex-col items-center pt-4 text-white font-bold">1</div></div>}
+                    {results[2] && <div className="flex flex-col items-center"><img src={results[2].imageUrl} className="w-20 h-20 md:w-28 md:h-28 rounded-2xl border-4 border-orange-300 object-cover shadow-lg" /><div className="h-24 w-20 md:w-28 bg-orange-200 rounded-t-2xl mt-4 flex flex-col items-center pt-4 font-bold text-orange-700 shadow-inner">3</div></div>}
                 </div>
                 <div className="max-w-xl mx-auto space-y-4 px-4 text-right">
-                    <h3 className="text-2xl font-bold text-slate-800 mb-6 mr-1 text-center">הדירוג המלא:</h3>
                     {results.slice(3).map((r, i) => (
                         <div key={r.id} className="flex justify-between items-center p-6 bg-white rounded-3xl shadow-md border-2 border-slate-50 text-right">
                             <div className="flex items-center gap-4 text-right">
@@ -324,6 +144,139 @@
                 </div>
             </div>
         );
+
+        // --- Main App Logic ---
+        const STAGES_VALS = { UPLOAD: 'upload', VOTING: 'voting', RESULTS: 'results' };
+        
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [authReady, setAuthReady] = useState(false);
+            const [roomId, setRoomId] = useState('תחרות-מרכזית');
+            const [stage, setStage] = useState(STAGES_VALS.UPLOAD);
+            const [contestTitle, setContestTitle] = useState('קרנבל התחפושות');
+            const [allParticipants, setAllParticipants] = useState([]);
+            const [allVotes, setAllVotes] = useState([]);
+            const [isAdmin, setIsAdmin] = useState(false);
+            const [editDisplayTitle, setEditDisplayTitle] = useState('');
+            const [msg, setMsg] = useState(null);
+
+            const showMsg = (text) => { setMsg(text); setTimeout(() => setMsg(null), 3000); };
+
+            // Firebase Initialization
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: "" };
+            const appUniqueId = typeof __app_id !== 'undefined' ? __app_id : 'purim-contest-live';
+            
+            if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+            const auth = firebase.auth();
+            const db = firebase.firestore();
+
+            useEffect(() => {
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                    } catch (e) { console.error("Auth failed", e); }
+                };
+                initAuth();
+                const unsubscribe = auth.onAuthStateChanged(u => {
+                    if (u) { setUser(u); setAuthReady(true); }
+                });
+                const r = new URLSearchParams(window.location.search).get('room');
+                if (r) setRoomId(r);
+                return () => unsubscribe();
+            }, []);
+
+            useEffect(() => {
+                if (!authReady || !user) return;
+                
+                const roomPath = `artifacts/${appUniqueId}/public/data/rooms/${roomId}`;
+                const unsubRoom = db.doc(roomPath).onSnapshot(doc => {
+                    if (doc.exists) {
+                        const data = doc.data();
+                        setStage(data.stage || STAGES_VALS.UPLOAD);
+                        setContestTitle(data.displayTitle || "קרנבל התחפושות");
+                        setEditDisplayTitle(data.displayTitle || "קרנבל התחפושות");
+                    } else {
+                        db.doc(roomPath).set({ stage: STAGES_VALS.UPLOAD, displayTitle: "קרנבל התחפושות" });
+                    }
+                }, err => console.warn("Permissions error..."));
+
+                const unsubParts = db.collection(`artifacts/${appUniqueId}/public/data/participants`).onSnapshot(snap => {
+                    setAllParticipants(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                });
+
+                const unsubVotes = db.collection(`artifacts/${appUniqueId}/public/data/votes`).onSnapshot(snap => {
+                    setAllVotes(snap.docs.map(d => d.data()));
+                });
+
+                if (sessionStorage.getItem(`admin_${roomId}`) === 'true') setIsAdmin(true);
+                return () => { unsubRoom(); unsubParts(); unsubVotes(); };
+            }, [authReady, user, roomId]);
+
+            const roomParticipants = useMemo(() => allParticipants.filter(p => p.roomId === roomId), [allParticipants, roomId]);
+            const roomVotes = useMemo(() => allVotes.filter(v => v.roomId === roomId), [allVotes, roomId]);
+
+            const results = useMemo(() => {
+                const scores = {};
+                roomParticipants.forEach(p => scores[p.id] = { ...p, score: 0 });
+                roomVotes.forEach(v => {
+                    if (v.targetId && scores[v.targetId]) scores[v.targetId].score += (v.points || 0);
+                });
+                return Object.values(scores).sort((a, b) => b.score - a.score);
+            }, [roomParticipants, roomVotes]);
+
+            if (!authReady) return (
+                <div className="min-h-screen flex flex-col items-center justify-center font-bold text-rose-600 gap-6" style={{backgroundColor: '#fff7ed'}}>
+                    <div className="loader"></div>
+                    <p className="text-2xl animate-pulse">מתחבר למערכת... 🎪</p>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen pb-40">
+                    {msg && <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-xl font-bold z-[1000] shadow-2xl animate-pop text-center">{msg}</div>}
+                    
+                    <header className="circus-header p-6 text-white shadow-xl flex justify-between items-center sticky top-0 z-50">
+                        <div className="flex items-center gap-4 text-right">
+                            <div className="bg-white p-2 rounded-full text-rose-600"><PartyIcon /></div>
+                            <div><h1 className="text-xl md:text-2xl font-bold">{contestTitle}</h1><p className="text-yellow-300 text-xs font-bold">פעיל בזמן אמת ✨</p></div>
+                        </div>
+                        <button onClick={() => { const p = prompt("קוד מנהל (2025):"); if (p === "2025") { setIsAdmin(true); sessionStorage.setItem(`admin_${roomId}`, 'true'); } }} className="p-3 bg-white/20 rounded-xl border border-white/30">
+                            {isAdmin ? <UnlockIcon /> : <LockIcon />}
+                        </button>
+                    </header>
+
+                    <div className="max-w-4xl mx-auto px-6 py-8">
+                        {isAdmin && (
+                            <div className="bg-white p-6 rounded-[2.5rem] mb-10 shadow-lg border-4 border-yellow-400">
+                                <h3 className="font-bold text-rose-600 mb-4 text-right">ניהול התחרות:</h3>
+                                <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-2 mb-6">
+                                    <button onClick={() => db.doc(`artifacts/${appUniqueId}/public/data/rooms/${roomId}`).update({stage: STAGES_VALS.UPLOAD})} className={`flex-1 py-3 rounded-xl font-bold ${stage === STAGES_VALS.UPLOAD ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500'}`}>1. העלאה</button>
+                                    <button onClick={() => db.doc(`artifacts/${appUniqueId}/public/data/rooms/${roomId}`).update({stage: STAGES_VALS.VOTING})} className={`flex-1 py-3 rounded-xl font-bold ${stage === STAGES_VALS.VOTING ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500'}`}>2. הצבעה</button>
+                                    <button onClick={() => db.doc(`artifacts/${appUniqueId}/public/data/rooms/${roomId}`).update({stage: STAGES_VALS.RESULTS})} className={`flex-1 py-3 rounded-xl font-bold ${stage === STAGES_VALS.RESULTS ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500'}`}>3. תוצאות</button>
+                                </div>
+                                <div className="text-right space-y-2">
+                                    <label className="font-bold text-slate-700 block text-sm">עריכת שם התחרות לתצוגה:</label>
+                                    <div className="flex gap-2">
+                                        <input value={editDisplayTitle} onChange={e => setEditDisplayTitle(e.target.value)} className="flex-1 p-3 border-2 rounded-xl outline-none" />
+                                        <button onClick={() => db.doc(`artifacts/${appUniqueId}/public/data/rooms/${roomId}`).update({displayTitle: editDisplayTitle})} className="bg-rose-600 text-white px-4 rounded-xl font-bold"><SaveIcon /></button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <main>
+                            {stage === STAGES_VALS.UPLOAD && <UploadPhase onAdd={async (n, c, i) => { const img = new Image(); img.src = i; const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); img.onload = async () => { canvas.width = 500; canvas.height = (img.height / img.width) * 500; ctx.drawImage(img, 0, 0, canvas.width, canvas.height); const comp = canvas.toDataURL('image/jpeg', 0.6); await db.collection(`artifacts/${appUniqueId}/public/data/participants`).add({ name: n, costume: c, imageUrl: comp, roomId, userId: user.uid, createdAt: new Date().toISOString() }); showMsg("התחפושת עלתה! 🎉"); }; }} participants={roomParticipants} myId={user.uid} />}
+                            {stage === STAGES_VALS.VOTING && <VotingPhase participants={roomParticipants} onVote={async (tid, pts) => { await db.collection(`artifacts/${appUniqueId}/public/data/votes`).add({ voterId: user.uid, targetId: tid, points: pts, roomId, timestamp: new Date().toISOString() }); showMsg("הצבעתך נקלטה! ✅"); }} />}
+                            {stage === STAGES_VALS.RESULTS && <ResultsPhase results={results} />}
+                        </main>
+                    </div>
+                </div>
+            );
+        };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
